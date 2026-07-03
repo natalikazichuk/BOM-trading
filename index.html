@@ -321,7 +321,7 @@ const firebaseConfig = {
 /* Ссылка по умолчанию на опубликованный CSV Google Sheets (можно оставить пустой
    и вставлять прямо в поле на странице). Пример формата:
    https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=0&single=true&output=csv */
-const SHEET_CSV_URL = "";
+const SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQvDn8XW9kgnJm6RQ8KEgaKKmyjE_31TqHw_F-ZVQFsh2IIOQJlGUvSCEV_mZdfA4_vCQsEj4ijyo7K/pub?output=csv";
 
 /* ---- storage backend (cloud | local) ---- */
 let mode = 'local';
@@ -621,6 +621,7 @@ async function renderHistory(){
    3b. ЦЕНА ИЗ GOOGLE FINANCE (через опубликованный CSV Google Sheets)
    ======================================================================== */
 let autoTimer = null;
+let feedRows = null;   // последний ответ таблицы: [{sym, price}, ...]
 
 function smartNum(s){
   s = String(s).trim().replace(/"/g,'');
@@ -632,6 +633,46 @@ function smartNum(s){
 
 function setFeed(msg, kind){ const el=$('feedStatus'); el.textContent=msg; el.className='feed-status'+(kind?(' '+kind):''); }
 
+// Разбираем CSV в строки {sym, price}. Работает и для одной ячейки (тогда sym = само число).
+function parseFeed(text){
+  const rows=[];
+  text.split(/\r?\n/).forEach(line=>{
+    if(!line.trim()) return;
+    const nums = line.match(/-?\d[\d.,]*\d|\d/g);
+    if(!nums) return;                                  // строка без числа (заголовок) — пропускаем
+    const price = smartNum(nums[nums.length-1]);       // цена = последнее число в строке
+    if(!isFinite(price) || price<=0) return;
+    const sym = line.split(/[,;\t]/)[0].trim();        // символ = первая ячейка
+    rows.push({ sym, price });
+  });
+  return rows;
+}
+
+const normSym = s => String(s||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
+// из тикера "ETH/USDT" делаем варианты символа: ETHUSDT, ETHUSD, ETH
+function symCandidates(ticker){
+  const up=String(ticker||'').toUpperCase().trim();
+  const base=(up.split('/')[0]||'').replace(/[^A-Z0-9]/g,'');
+  return [normSym(up), base+'USD', base+'USDT', base].filter(Boolean);
+}
+
+// подставляем цену для текущего тикера из уже загруженной таблицы (без запроса в сеть)
+function applyFeed(){
+  if(!feedRows || !feedRows.length) return;
+  const named = feedRows.filter(r=>isNaN(Number(r.sym)) && normSym(r.sym)); // строки с текстовым символом
+  const cands = symCandidates($('ticker').value);
+  let hit = named.find(r => cands.includes(normSym(r.sym)));
+  if(!hit && feedRows.length===1) hit = feedRows[0];   // одна ячейка — берём как есть
+  if(hit){
+    $('current').value = String(hit.price);
+    recalc(); renderLevels();
+    const tk = ($('ticker').value||'').trim().toUpperCase();
+    setFeed('Google Finance · '+tk+' = '+fmt(hit.price,2)+' · '+new Date().toLocaleTimeString('ru-RU'), 'ok');
+  } else {
+    setFeed('в таблице нет цены для «'+($('ticker').value||'').trim()+'». Добавь строку '+(cands[1]||'СИМВОЛ')+' в столбец A.', 'err');
+  }
+}
+
 async function fetchPrice(){
   const url = ($('sheetUrl').value || SHEET_CSV_URL || '').trim();
   if(!url){ setFeed('источник не задан — вставь ссылку на таблицу', ''); return; }
@@ -641,12 +682,9 @@ async function fetchPrice(){
     const r = await fetch(url, { cache:'no-store' });
     if(!r.ok) throw new Error('HTTP '+r.status);
     const text = await r.text();
-    const tokens = text.match(/-?\d[\d.,]*\d|\d/g);            // берём последнее число в ответе = цену
-    const price = tokens ? smartNum(tokens[tokens.length-1]) : NaN;
-    if(!isFinite(price) || price<=0) throw new Error('в ответе нет цены');
-    $('current').value = String(price);
-    recalc(); renderLevels();
-    setFeed('Google Finance · обновлено '+new Date().toLocaleTimeString('ru-RU'), 'ok');
+    feedRows = parseFeed(text);
+    if(!feedRows.length) throw new Error('в ответе нет цен');
+    applyFeed();
   }catch(e){
     setFeed('не вышло получить цену ('+e.message+'). Проверь, что таблица «Опубликована в интернете» как CSV. Если браузер блокирует по CORS — см. заметку.', 'err');
   }finally{
@@ -667,6 +705,7 @@ $('autoChk').addEventListener('change', e=>{
 ['current','account','risk','entry','stop','target','ticker'].forEach(id=>{
   $(id).addEventListener('input', ()=>{ recalc(); renderLevels(); });
 });
+$('ticker').addEventListener('input', ()=>{ if(feedRows) applyFeed(); });
 
 (async function boot(){
   await initStore();
