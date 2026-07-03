@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Риск-тикет · стоп-лосс, уровни, история</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600&display=swap');
+
+  :root{
+    --canvas:#0E1726; --panel:#17233A; --inset:#1F2E49;
+    --line:rgba(255,255,255,.08);
+    --text:#E6ECF5; --muted:#8497B0;
+    --long:#34D399; --short:#F26D6D; --gold:#F5B841;
+    --display:'Oswald',system-ui,sans-serif;
+    --mono:'JetBrains Mono',ui-monospace,monospace;
+    --body:'Inter',system-ui,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    background:radial-gradient(1200px 600px at 80% -10%,rgba(245,184,65,.06),transparent 60%),var(--canvas);
+    color:var(--text);font-family:var(--body);line-height:1.5;
+    padding:20px 16px 60px;max-width:720px;margin:0 auto;
+  }
+
+  header{margin-bottom:20px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--gold);margin-bottom:8px}
+  h1{font-family:var(--display);font-weight:600;font-size:34px;line-height:1;letter-spacing:.01em;text-transform:uppercase}
+  h1 .thin{color:var(--muted);font-weight:400}
+  .sub{color:var(--muted);font-size:13px;margin-top:8px;max-width:52ch}
+
+  .status{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;letter-spacing:.06em;margin-top:12px;padding:5px 10px;border-radius:20px;border:1px solid var(--line);color:var(--muted)}
+  .status .led{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+  .status.cloud{color:var(--long);border-color:rgba(52,211,153,.35)} .status.cloud .led{background:var(--long)}
+  .status.local{color:var(--gold);border-color:rgba(245,184,65,.35)} .status.local .led{background:var(--gold)}
+
+  .pricebar{display:flex;align-items:flex-end;gap:18px;flex-wrap:wrap;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:18px 0}
+  .pricebar label{font-family:var(--mono);font-size:10px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:6px}
+  .ticker-input{font-family:var(--display);font-weight:600;font-size:20px;letter-spacing:.06em;text-transform:uppercase;color:var(--text);background:transparent;border:none;border-bottom:2px solid var(--line);width:150px;max-width:100%;padding:0 0 6px}
+  .ticker-input:focus{outline:none;border-bottom-color:var(--gold)}
+  .price-input{font-family:var(--mono);font-weight:700;font-size:28px;color:var(--gold);background:transparent;border:none;border-bottom:2px solid rgba(245,184,65,.35);width:180px;max-width:100%;padding:0 0 4px}
+  .price-input:focus{outline:none;border-bottom-color:var(--gold)}
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:18px}
+  .card>h2{font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:16px;display:flex;align-items:center;gap:10px}
+  .card>h2::before{content:"";width:6px;height:14px;background:var(--gold);border-radius:2px;display:inline-block}
+
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .field{display:flex;flex-direction:column}
+  .field label{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);margin-bottom:7px}
+  .field input{font-family:var(--mono);font-size:18px;font-weight:500;color:var(--text);background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:11px 12px;width:100%}
+  .field input:focus{outline:none;border-color:var(--gold)}
+  .hint{font-size:11px;color:var(--muted);margin-top:6px;font-family:var(--mono)}
+
+  .toggle{display:flex;gap:8px}
+  .toggle button{flex:1;font-family:var(--display);font-weight:600;font-size:14px;letter-spacing:.12em;text-transform:uppercase;padding:12px;border-radius:9px;border:1px solid var(--line);background:var(--inset);color:var(--muted);cursor:pointer;transition:.15s}
+  .toggle button.on[data-dir="long"]{background:rgba(52,211,153,.16);border-color:var(--long);color:var(--long)}
+  .toggle button.on[data-dir="short"]{background:rgba(242,109,109,.16);border-color:var(--short);color:var(--short)}
+
+  .ticket{background:var(--inset);border:1px dashed var(--line);border-radius:11px;padding:4px 16px;margin-top:16px}
+  .row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:11px 0;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .row .k{font-size:12px;color:var(--muted)}
+  .row .v{font-family:var(--mono);font-size:17px;font-weight:600;text-align:right}
+  .row.big .v{font-size:22px}
+  .v.long{color:var(--long)} .v.short{color:var(--short)} .v.gold{color:var(--gold)}
+
+  .warn{font-size:12.5px;line-height:1.45;color:#FBD38D;background:rgba(245,184,65,.08);border:1px solid rgba(245,184,65,.25);border-radius:9px;padding:10px 12px;margin-top:14px}
+  .warn.bad{color:#FCA5A5;background:rgba(242,109,109,.09);border-color:rgba(242,109,109,.3)}
+  .warn::before{content:"⚠ "} .warn.hidden{display:none}
+
+  .save-btn{width:100%;margin-top:16px;font-family:var(--display);font-weight:600;letter-spacing:.08em;text-transform:uppercase;font-size:15px;padding:14px;background:var(--gold);color:#1a1206;border:none;border-radius:11px;cursor:pointer;transition:.15s}
+  .save-btn:active{transform:translateY(1px)}
+  .save-btn:disabled{opacity:.4;cursor:not-allowed}
+  .save-note{font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;margin-top:8px}
+
+  /* price feed */
+  .feed{display:flex;align-items:center;gap:12px;padding-bottom:8px}
+  .feed-btn{width:40px;height:40px;border-radius:9px;border:1px solid var(--line);background:var(--inset);color:var(--gold);font-size:19px;cursor:pointer;line-height:1}
+  .feed-btn:active{transform:translateY(1px)}
+  .feed-btn.spin{animation:spin .8s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .auto{font-family:var(--mono);font-size:11px;letter-spacing:.06em;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer;user-select:none}
+  .auto input{accent-color:var(--gold)}
+  .feed-cfg{margin-bottom:8px}
+  .feed-cfg input{width:100%;font-family:var(--mono);font-size:12px;color:var(--text);background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .feed-cfg input:focus{outline:none;border-color:var(--gold)}
+  .feed-status{font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:18px;display:flex;align-items:center;gap:6px;line-height:1.5}
+  .feed-status::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none}
+  .feed-status.ok{color:var(--long)} .feed-status.ok::before{background:var(--long)}
+  .feed-status.err{color:var(--short)} .feed-status.err::before{background:var(--short)}
+  .feed-status.load{color:var(--gold)} .feed-status.load::before{background:var(--gold)}
+
+  /* stop block */
+  .stopblock{margin-top:14px;border:1px solid var(--line);border-radius:11px;padding:14px;background:rgba(242,109,109,.04)}
+  .sb-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+  .sb-head > label{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+  .seg.stopmode button{padding:8px 11px;font-size:11px}
+  .sb-body{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+  .stopval{font-family:var(--mono);font-size:20px;font-weight:600;color:var(--text);background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:11px 12px;width:150px}
+  .stopval:focus{outline:none;border-color:var(--gold)}
+  .stopval.readonly{color:var(--short);border-style:dashed;border-color:rgba(242,109,109,.4)}
+  .aux{display:none;gap:10px;align-items:flex-end}
+  .aux.show{display:flex}
+  .aux .mini{display:flex;flex-direction:column}
+  .aux .mini label{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+  .aux .mini input{font-family:var(--mono);font-size:15px;color:var(--text);background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:9px 10px;width:88px}
+  .aux .mini input:focus{outline:none;border-color:var(--gold)}
+  .stopHint{font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+
+  /* ladder */
+  .ladder{position:relative;height:340px;border-left:1px solid var(--line);margin-left:4px}
+  .tick{position:absolute;left:0;right:0;transform:translateY(-50%);display:flex;align-items:center;gap:8px}
+  .tick .dot{width:9px;height:9px;border-radius:50%;flex:none;margin-left:-5px;border:2px solid var(--canvas)}
+  .tick .bar{height:1px;flex:1;opacity:.35}
+  .tick .lbl{font-family:var(--mono);font-size:12px;white-space:nowrap;display:flex;flex-direction:column;line-height:1.25;text-align:right}
+  .tick .lbl .pr{font-weight:600}
+  .tick .lbl .meta{font-size:10px;color:var(--muted)}
+  .m-current .dot{background:var(--gold)} .m-current .bar{background:var(--gold)} .m-current .pr{color:var(--gold)}
+  .m-entry .dot{background:var(--canvas);border-color:var(--text)} .m-entry .bar{background:var(--text)}
+  .m-stop .dot{background:var(--short)} .m-stop .bar{background:var(--short)} .m-stop .pr{color:var(--short)}
+  .m-target .dot{background:var(--long)} .m-target .bar{background:var(--long)} .m-target .pr{color:var(--long)}
+  .m-res .dot{background:transparent;border-color:var(--short)} .m-res .bar{background:var(--short);opacity:.2}
+  .m-sup .dot{background:transparent;border-color:var(--long)} .m-sup .bar{background:var(--long);opacity:.2}
+  .ladder-legend{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:.08em;margin-top:12px;display:flex;flex-wrap:wrap;gap:12px}
+  .ladder-legend span{display:flex;align-items:center;gap:5px}
+  .ladder-legend i{width:8px;height:8px;border-radius:50%;display:inline-block}
+
+  /* levels */
+  .add-level{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+  .add-level input{font-family:var(--mono);font-size:15px;color:var(--text);background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:10px 12px;flex:1;min-width:110px}
+  .add-level input:focus{outline:none;border-color:var(--gold)}
+  .seg{display:flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{font-family:var(--display);font-weight:600;font-size:12px;letter-spacing:.08em;text-transform:uppercase;padding:10px 12px;background:var(--inset);color:var(--muted);border:none;cursor:pointer}
+  .seg button.on[data-type="res"]{background:rgba(242,109,109,.16);color:var(--short)}
+  .seg button.on[data-type="sup"]{background:rgba(52,211,153,.16);color:var(--long)}
+  .btn-add{font-family:var(--display);font-weight:600;letter-spacing:.06em;text-transform:uppercase;font-size:13px;padding:10px 16px;background:var(--gold);color:#1a1206;border:none;border-radius:9px;cursor:pointer}
+  .level-list,.hist-list{list-style:none;display:flex;flex-direction:column;gap:7px}
+  .level-item{display:flex;align-items:center;gap:10px;background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:10px 12px}
+  .level-item .tag{font-family:var(--display);font-weight:700;font-size:11px;letter-spacing:.08em;padding:3px 8px;border-radius:5px}
+  .tag.res{background:rgba(242,109,109,.16);color:var(--short)} .tag.sup{background:rgba(52,211,153,.16);color:var(--long)}
+  .level-item .lp{font-family:var(--mono);font-weight:600;font-size:16px}
+  .level-item .ld{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+  .del{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:0 2px;line-height:1}
+  .del:hover{color:var(--short)}
+  .empty{font-size:12.5px;color:var(--muted);font-family:var(--mono);text-align:center;padding:8px 0}
+
+  /* history */
+  .hist-summary{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+  .stat{flex:1;min-width:70px;background:var(--inset);border:1px solid var(--line);border-radius:9px;padding:10px 12px;text-align:center}
+  .stat .n{font-family:var(--mono);font-weight:700;font-size:19px}
+  .stat .l{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+  .hist-item{background:var(--inset);border:1px solid var(--line);border-radius:10px;padding:12px}
+  .hi-top{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+  .hi-ticker{font-family:var(--display);font-weight:600;font-size:15px;letter-spacing:.06em}
+  .hi-dir{font-family:var(--display);font-weight:700;font-size:10px;letter-spacing:.08em;padding:2px 7px;border-radius:5px}
+  .hi-dir.long{background:rgba(52,211,153,.16);color:var(--long)} .hi-dir.short{background:rgba(242,109,109,.16);color:var(--short)}
+  .hi-date{font-family:var(--mono);font-size:11px;color:var(--muted);margin-left:auto}
+  .hi-nums{font-family:var(--mono);font-size:12.5px;color:var(--muted);line-height:1.7;margin-bottom:10px}
+  .hi-nums b{color:var(--text);font-weight:600}
+  .hi-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .oc-btn{font-family:var(--display);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+  .oc-btn.win.on{background:rgba(52,211,153,.16);border-color:var(--long);color:var(--long)}
+  .oc-btn.loss.on{background:rgba(242,109,109,.16);border-color:var(--short);color:var(--short)}
+  .oc-btn.cancel.on{background:rgba(132,151,176,.16);border-color:var(--muted);color:var(--text)}
+  .pl-input{font-family:var(--mono);font-size:13px;width:92px;background:var(--panel);border:1px solid var(--line);border-radius:7px;padding:6px 8px;color:var(--text)}
+  .pl-input:focus{outline:none;border-color:var(--gold)}
+  .hi-foot .del{margin-left:auto;font-size:20px}
+
+  footer{color:var(--muted);font-size:11.5px;line-height:1.5;text-align:center;margin-top:26px;font-family:var(--mono)}
+
+  @media (max-width:560px){
+    h1{font-size:28px}
+    .grid{grid-template-columns:1fr}
+    .price-input{font-size:24px;width:150px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">Управление риском</div>
+  <h1>Риск-<span class="thin">тикет</span></h1>
+  <p class="sub">Размер позиции считается от стопа. Работает с любым инструментом — крипта, акции, форекс. Сначала решаешь, сколько готов потерять — потом сколько брать.</p>
+  <div class="status local" id="status"><span class="led"></span><span id="statusText">локальный режим (сессия)</span></div>
+</header>
+
+<div class="pricebar">
+  <div>
+    <label>Инструмент / тикер</label>
+    <input class="ticker-input" id="ticker" type="text" value="BTC/USDT" autocomplete="off">
+  </div>
+  <div>
+    <label>Текущая цена</label>
+    <input class="price-input" id="current" type="text" inputmode="decimal" value="61732">
+  </div>
+  <div class="feed">
+    <button class="feed-btn" id="refreshBtn" title="Обновить цену">&#8635;</button>
+    <label class="auto"><input type="checkbox" id="autoChk"> авто&nbsp;15с</label>
+  </div>
+</div>
+
+<div class="feed-cfg">
+  <input id="sheetUrl" type="text" autocomplete="off" placeholder="Ссылка на опубликованный CSV из Google Sheets">
+</div>
+<div class="feed-status" id="feedStatus">источник не задан — вставь ссылку на таблицу</div>
+
+<!-- POSITION -->
+<div class="card">
+  <h2>Позиция</h2>
+  <div class="grid">
+    <div class="field"><label>Депозит, $</label><input id="account" type="text" inputmode="decimal" value="50"></div>
+    <div class="field"><label>Риск на сделку, %</label><input id="risk" type="text" inputmode="decimal" value="2"><span class="hint" id="riskAbs">= $1.00</span></div>
+    <div class="field"><label>Цена входа</label><input id="entry" type="text" inputmode="decimal" value="61732"></div>
+    <div class="field"><label>Цель (тейк-профит)</label><input id="target" type="text" inputmode="decimal" value="63500"></div>
+    <div class="field">
+      <label>Направление</label>
+      <div class="toggle" id="dir">
+        <button data-dir="long" class="on">Лонг</button>
+        <button data-dir="short">Шорт</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="stopblock">
+    <div class="sb-head">
+      <label>Стоп-лосс</label>
+      <div class="seg stopmode" id="stopMode">
+        <button data-m="manual" class="on">Ручной</button>
+        <button data-m="pct">%</button>
+        <button data-m="level">Уровень</button>
+        <button data-m="atr">ATR</button>
+      </div>
+    </div>
+    <div class="sb-body">
+      <input class="stopval" id="stop" type="text" inputmode="decimal" value="60400">
+      <div class="aux" data-m="pct">
+        <div class="mini"><label>Отступ, %</label><input id="stopPct" type="text" inputmode="decimal" value="2"></div>
+      </div>
+      <div class="aux" data-m="level">
+        <div class="mini"><label>Буфер, %</label><input id="stopBuf" type="text" inputmode="decimal" value="0.3"></div>
+      </div>
+      <div class="aux" data-m="atr">
+        <div class="mini"><label>ATR</label><input id="atrVal" type="text" inputmode="decimal" placeholder="напр. 850"></div>
+        <div class="mini"><label>× множ.</label><input id="atrMult" type="text" inputmode="decimal" value="1.5"></div>
+      </div>
+    </div>
+    <div class="stopHint" id="stopHint"></div>
+  </div>
+
+  <div class="ticket" id="ticket">
+    <div class="row big"><span class="k">Размер позиции</span><span class="v gold" id="rPos">—</span></div>
+    <div class="row"><span class="k">В инструменте</span><span class="v" id="rUnits">—</span></div>
+    <div class="row"><span class="k">Риск (макс. убыток)</span><span class="v short" id="rRisk">—</span></div>
+    <div class="row"><span class="k">Ход до стопа</span><span class="v" id="rStopDist">—</span></div>
+    <div class="row"><span class="k">Прибыль у цели</span><span class="v long" id="rProfit">—</span></div>
+    <div class="row"><span class="k">Риск / прибыль</span><span class="v gold" id="rRR">—</span></div>
+  </div>
+
+  <div class="warn hidden" id="warnBox"></div>
+
+  <button class="save-btn" id="saveBtn" disabled>Сохранить в историю</button>
+  <div class="save-note" id="saveNote"></div>
+</div>
+
+<!-- HISTORY -->
+<div class="card">
+  <h2>История сделок</h2>
+  <div class="hist-summary" id="histSummary"></div>
+  <ul class="hist-list" id="histList"></ul>
+</div>
+
+<!-- LADDER -->
+<div class="card">
+  <h2>Ценовая лестница</h2>
+  <div class="ladder" id="ladder"></div>
+  <div class="ladder-legend">
+    <span><i style="background:var(--gold)"></i>цена / вход</span>
+    <span><i style="background:var(--short)"></i>стоп · сопротивление</span>
+    <span><i style="background:var(--long)"></i>цель · поддержка</span>
+  </div>
+</div>
+
+<!-- LEVELS -->
+<div class="card">
+  <h2>Уровни поддержки и сопротивления</h2>
+  <div class="add-level">
+    <input id="lvlPrice" type="text" inputmode="decimal" placeholder="Цена уровня">
+    <div class="seg" id="lvlType">
+      <button data-type="sup" class="on">Поддержка</button>
+      <button data-type="res">Сопрот.</button>
+    </div>
+    <button class="btn-add" id="lvlAdd">Добавить</button>
+  </div>
+  <ul class="level-list" id="levelList"></ul>
+</div>
+
+<footer>
+  Инструмент для расчётов, не сигнал и не совет. Уровни — зоны, а не точные линии.<br>
+  Любой уровень может быть пробит. Рискуй только тем, что готов потерять.
+</footer>
+
+<script type="module">
+/* ========================================================================
+   1. FIREBASE CONFIG — заполни для облачной истории.
+   Пока стоят заглушки, страница работает в локальном режиме (история живёт
+   в рамках сессии). Как только впишешь ключи и откроешь файл на хостинге —
+   история начнёт сохраняться в Firestore.
+   ======================================================================== */
+const firebaseConfig = {
+  apiKey:            "AIzaSyAAdYgnJONJUOILUsq3pGo2sJe-Kkf62J8",
+  authDomain:        "bom-trading.firebaseapp.com",
+  projectId:         "bom-trading",
+  storageBucket:     "bom-trading.firebasestorage.app",
+  messagingSenderId: "206741893586",
+  appId:             "1:206741893586:web:b30a956e3cbcf8b156d80b",
+  measurementId:     "G-J485M172GV"
+};
+
+/* Ссылка по умолчанию на опубликованный CSV Google Sheets (можно оставить пустой
+   и вставлять прямо в поле на странице). Пример формата:
+   https://docs.google.com/spreadsheets/d/e/XXXX/pub?gid=0&single=true&output=csv */
+const SHEET_CSV_URL = "";
+
+/* ---- storage backend (cloud | local) ---- */
+let mode = 'local';
+let cloud = null;               // {db, fs, uid}
+const mem = { arr: [], seq: 0 };
+
+async function initStore(){
+  const ok = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('ТВОЙ');
+  if(!ok) return;
+  try{
+    const V = "https://www.gstatic.com/firebasejs/11.0.2/";
+    const { initializeApp } = await import(V+"firebase-app.js");
+    const authMod = await import(V+"firebase-auth.js");
+    const fs = await import(V+"firebase-firestore.js");
+    const app = initializeApp(firebaseConfig);
+    const auth = authMod.getAuth(app);
+    const db = fs.getFirestore(app);
+    const uid = await new Promise((res,rej)=>{
+      authMod.onAuthStateChanged(auth, u => u && res(u.uid));
+      authMod.signInAnonymously(auth).catch(rej);
+    });
+    cloud = { db, fs, uid };
+    mode = 'cloud';
+  }catch(e){ console.warn('Firebase недоступен — локальный режим.', e); }
+}
+
+async function storeSave(t){
+  const rec = { ...t, outcome:'open', resultAmount:null };
+  if(mode==='cloud'){
+    const { db, fs, uid } = cloud;
+    const ref = await fs.addDoc(fs.collection(db,'users',uid,'trades'),
+      { ...rec, createdAt: fs.serverTimestamp() });
+    return ref.id;
+  }
+  const id = 'm'+(++mem.seq);
+  mem.arr.push({ id, ...rec, createdAt: Date.now() });
+  return id;
+}
+async function storeList(){
+  if(mode==='cloud'){
+    const { db, fs, uid } = cloud;
+    const q = fs.query(fs.collection(db,'users',uid,'trades'), fs.orderBy('createdAt','desc'));
+    const snap = await fs.getDocs(q);
+    return snap.docs.map(d => ({ id:d.id, ...d.data() }));
+  }
+  return mem.arr.slice().sort((a,b)=>b.createdAt-a.createdAt);
+}
+async function storeOutcome(id, outcome, result){
+  if(mode==='cloud'){
+    const { db, fs, uid } = cloud;
+    await fs.updateDoc(fs.doc(db,'users',uid,'trades',id), { outcome, resultAmount: result });
+    return;
+  }
+  const t = mem.arr.find(x=>x.id===id);
+  if(t){ t.outcome = outcome; t.resultAmount = result; }
+}
+async function storeRemove(id){
+  if(mode==='cloud'){
+    const { db, fs, uid } = cloud;
+    await fs.deleteDoc(fs.doc(db,'users',uid,'trades',id));
+    return;
+  }
+  mem.arr = mem.arr.filter(x=>x.id!==id);
+}
+
+/* ========================================================================
+   2. CALCULATOR
+   ======================================================================== */
+const $ = id => document.getElementById(id);
+const num = v => { const n = parseFloat(String(v).replace(/\s/g,'').replace(',', '.')); return isFinite(n)?n:NaN; };
+const fmt = (n,d=2) => isFinite(n) ? n.toLocaleString('ru-RU',{minimumFractionDigits:d,maximumFractionDigits:d}) : '—';
+const fmtU = n => isFinite(n) ? n.toLocaleString('ru-RU',{maximumFractionDigits:6}) : '—';
+const baseAsset = t => { const s=(t||'').trim().toUpperCase(); return s.includes('/') ? s.split('/')[0] : 'ед.'; };
+
+let direction = 'long';
+let stopMode = 'manual';
+let lvlType = 'sup';
+let levels = [ {price:62200,type:'res'}, {price:57800,type:'sup'} ];
+let lastResult = null;   // валидный расчёт для сохранения, либо null
+
+$('dir').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; direction=b.dataset.dir; [...$('dir').children].forEach(x=>x.classList.toggle('on',x===b)); recalc(); });
+$('lvlType').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; lvlType=b.dataset.type; [...$('lvlType').children].forEach(x=>x.classList.toggle('on',x===b)); });
+
+// ---- авто-расчёт стоп-лосса ----
+$('stopMode').addEventListener('click', e=>{ const b=e.target.closest('button'); if(!b) return; stopMode=b.dataset.m; [...$('stopMode').children].forEach(x=>x.classList.toggle('on',x===b)); updateStopMode(); });
+['stopPct','stopBuf','atrVal','atrMult'].forEach(id=>$(id).addEventListener('input', recalc));
+
+function updateStopMode(){
+  document.querySelectorAll('.aux').forEach(a=>a.classList.toggle('show', a.dataset.m===stopMode));
+  const manual = stopMode==='manual';
+  const el=$('stop');
+  el.readOnly=!manual;
+  el.classList.toggle('readonly', !manual);
+  recalc();
+}
+
+// возвращает {stop, note}; для авто-режимов пишет цену в поле стопа
+function resolveStop(entry){
+  if(stopMode==='manual') return { stop:num($('stop').value), note:'' };
+  if(!isFinite(entry)||entry<=0) return { stop:NaN, note:'Введи цену входа для авто-стопа.' };
+  const long = direction==='long';
+  let stop=NaN, note='';
+
+  if(stopMode==='pct'){
+    const p=num($('stopPct').value);
+    if(isFinite(p)&&p>0){ stop = long ? entry*(1-p/100) : entry*(1+p/100); note='Стоп на '+fmt(p,2)+'% '+(long?'ниже':'выше')+' входа.'; }
+    else note='Укажи отступ в процентах.';
+  }
+  else if(stopMode==='level'){
+    const buf=num($('stopBuf').value)||0;
+    if(long){
+      const s=levels.filter(l=>l.type==='sup'&&l.price<entry).map(l=>l.price);
+      if(s.length){ const lvl=Math.max(...s); stop=lvl*(1-buf/100); note='За поддержкой '+fmt(lvl,2)+' с буфером '+fmt(buf,2)+'%.'; }
+      else note='Нет поддержки ниже входа — добавь уровень в блоке ниже.';
+    } else {
+      const r=levels.filter(l=>l.type==='res'&&l.price>entry).map(l=>l.price);
+      if(r.length){ const lvl=Math.min(...r); stop=lvl*(1+buf/100); note='За сопротивлением '+fmt(lvl,2)+' с буфером '+fmt(buf,2)+'%.'; }
+      else note='Нет сопротивления выше входа — добавь уровень в блоке ниже.';
+    }
+  }
+  else if(stopMode==='atr'){
+    const a=num($('atrVal').value), m=num($('atrMult').value);
+    if(isFinite(a)&&a>0&&isFinite(m)&&m>0){ stop = long ? entry-m*a : entry+m*a; note='Вход '+(long?'−':'+')+' '+fmt(m,2)+'×ATR (ATR='+fmt(a,2)+'). ATR берётся с графика.'; }
+    else note='Укажи ATR (индикатор на графике) и множитель, обычно 1.5–2.';
+  }
+
+  if(isFinite(stop)){ stop=Math.round(stop*100)/100; $('stop').value=String(stop); }
+  return { stop, note };
+}
+
+function addLevel(){ const p=num($('lvlPrice').value); if(!isFinite(p)||p<=0) return; levels.push({price:p,type:lvlType}); $('lvlPrice').value=''; renderLevels(); recalc(); }
+$('lvlAdd').addEventListener('click', addLevel);
+$('lvlPrice').addEventListener('keydown', e=>{ if(e.key==='Enter') addLevel(); });
+
+function renderLevels(){
+  const cur=num($('current').value), list=$('levelList');
+  list.innerHTML='';
+  if(!levels.length){ list.innerHTML='<div class="empty">Пока нет уровней. Добавь те, что видишь на графике.</div>'; return; }
+  levels.slice().sort((a,b)=>b.price-a.price).forEach(lv=>{
+    const idx=levels.indexOf(lv);
+    const dist=isFinite(cur)&&cur>0?(lv.price-cur)/cur*100:NaN;
+    const li=document.createElement('li'); li.className='level-item';
+    const tag=lv.type==='res'?'<span class="tag res">R</span>':'<span class="tag sup">S</span>';
+    const d=isFinite(dist)?(dist>=0?'+':'')+fmt(dist,2)+'%':'';
+    li.innerHTML=tag+'<span class="lp">'+fmt(lv.price,2)+'</span><span class="ld">'+d+' от цены</span><button class="del" title="Удалить">×</button>';
+    li.querySelector('.del').addEventListener('click',()=>{ levels.splice(idx,1); renderLevels(); recalc(); });
+    list.appendChild(li);
+  });
+}
+
+function recalc(){
+  const cur=num($('current').value), acc=num($('account').value), riskPct=num($('risk').value);
+  const entry=num($('entry').value), target=num($('target').value);
+  const stopInfo=resolveStop(entry);
+  const stop=stopInfo.stop;
+  $('stopHint').textContent=stopInfo.note||'';
+  const unit=baseAsset($('ticker').value);
+
+  const riskAbs=(isFinite(acc)&&isFinite(riskPct))?acc*riskPct/100:NaN;
+  $('riskAbs').textContent=isFinite(riskAbs)?'= $'+fmt(riskAbs,2):'= —';
+
+  const warn=$('warnBox');
+  const setWarn=(m,bad)=>{ if(m){warn.textContent=m;warn.className='warn'+(bad?' bad':'');} else warn.className='warn hidden'; };
+  const clear=()=>{ ['rPos','rUnits','rRisk','rStopDist','rProfit','rRR'].forEach(i=>$(i).textContent='—'); lastResult=null; $('saveBtn').disabled=true; };
+
+  if(!isFinite(entry)||!isFinite(stop)||!isFinite(riskAbs)||entry<=0){ clear(); setWarn(null); drawLadder(); return; }
+  if(direction==='long'&&stop>=entry){ clear(); setWarn('Для лонга стоп-лосс должен быть НИЖЕ цены входа.',true); drawLadder(); return; }
+  if(direction==='short'&&stop<=entry){ clear(); setWarn('Для шорта стоп-лосс должен быть ВЫШЕ цены входа.',true); drawLadder(); return; }
+
+  const stopFrac=Math.abs(entry-stop)/entry;
+  const posValue=riskAbs/stopFrac;
+  const units=posValue/entry;
+
+  $('rPos').textContent='$'+fmt(posValue,2);
+  $('rUnits').textContent=fmtU(units)+' '+unit;
+  $('rRisk').textContent='−$'+fmt(riskAbs,2);
+  $('rStopDist').textContent=fmt(stopFrac*100,2)+'%  ($'+fmt(Math.abs(entry-stop),2)+')';
+
+  let rr=null, profit=null, hasTarget=false;
+  if(isFinite(target)&&target>0){
+    const good=direction==='long'?target>entry:target<entry;
+    if(good){ const rewardFrac=Math.abs(target-entry)/entry; profit=posValue*rewardFrac; rr=rewardFrac/stopFrac; hasTarget=true; }
+  }
+  $('rProfit').textContent=hasTarget?'+$'+fmt(profit,2):'—';
+  $('rRR').textContent=hasTarget?'1 : '+fmt(rr,2):'—';
+
+  let msg=null,bad=false;
+  if(direction==='short'){ msg='Шорт возможен только с плечом (фьючерсы/маржа) — на старте это высокий риск. На акциях это ещё и короткая продажа, доступна не у всех брокеров.'; }
+  else if(isFinite(acc)&&posValue>acc){ msg='Чтобы рискнуть $'+fmt(riskAbs,2)+' при таком стопе, нужна позиция $'+fmt(posValue,2)+', а у тебя $'+fmt(acc,2)+'. Поставь стоп ближе или уменьши риск %.'; bad=true; }
+  else if(hasTarget&&rr<1){ msg='Риск/прибыль меньше 1:1 — рискуешь больше, чем можешь взять. Обычно ищут хотя бы 1:2.'; }
+  setWarn(msg,bad);
+
+  lastResult={
+    pair:($('ticker').value||'').trim().toUpperCase()||'—',
+    direction, account:acc, riskPercent:riskPct,
+    entryPrice:entry, stopPrice:stop, targetPrice:hasTarget?target:null, currentPrice:cur,
+    riskAmount:riskAbs, positionValue:posValue, units,
+    stopDistancePercent:stopFrac*100, riskReward:rr
+  };
+  $('saveBtn').disabled=false;
+
+  drawLadder();
+}
+
+function drawLadder(){
+  const L=$('ladder'); L.innerHTML='';
+  const cur=num($('current').value),entry=num($('entry').value),stop=num($('stop').value),target=num($('target').value);
+  const marks=[];
+  if(isFinite(cur)) marks.push({p:cur,cls:'m-current',name:'Цена'});
+  if(isFinite(entry)&&entry!==cur) marks.push({p:entry,cls:'m-entry',name:'Вход'});
+  if(isFinite(stop)) marks.push({p:stop,cls:'m-stop',name:'Стоп'});
+  if(isFinite(target)) marks.push({p:target,cls:'m-target',name:'Цель'});
+  levels.forEach(lv=>marks.push({p:lv.price,cls:lv.type==='res'?'m-res':'m-sup',name:lv.type==='res'?'Сопрот.':'Поддержка'}));
+  const valid=marks.filter(m=>isFinite(m.p));
+  if(valid.length<2){ L.innerHTML='<div class="empty" style="padding-top:150px">Введи цены, чтобы построить шкалу</div>'; return; }
+  let min=Math.min(...valid.map(m=>m.p)),max=Math.max(...valid.map(m=>m.p));
+  const pad=(max-min)*0.08||max*0.01; min-=pad; max+=pad; const range=max-min;
+  valid.forEach(m=>{
+    const y=(max-m.p)/range*100;
+    const dist=isFinite(cur)&&cur>0?(m.p-cur)/cur*100:NaN;
+    const dt=isFinite(dist)&&Math.abs(dist)>0.001?(dist>=0?'+':'')+fmt(dist,2)+'%':(m.cls==='m-current'?'':'0%');
+    const el=document.createElement('div'); el.className='tick '+m.cls; el.style.top=y+'%';
+    el.innerHTML='<span class="dot"></span><span class="bar"></span><span class="lbl"><span class="pr">'+fmt(m.p,2)+'</span><span class="meta">'+m.name+(dt?' · '+dt:'')+'</span></span>';
+    L.appendChild(el);
+  });
+}
+
+/* ========================================================================
+   3. HISTORY UI
+   ======================================================================== */
+function fmtDate(ts){
+  const d = ts && ts.toDate ? ts.toDate() : (ts ? new Date(ts) : null);
+  if(!d) return '—';
+  return d.toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
+}
+
+$('saveBtn').addEventListener('click', async ()=>{
+  if(!lastResult) return;
+  $('saveBtn').disabled=true; $('saveBtn').textContent='Сохраняю…';
+  try{ await storeSave(lastResult); await renderHistory(); }
+  catch(e){ console.error(e); alert('Не удалось сохранить: '+e.message); }
+  $('saveBtn').textContent='Сохранить в историю'; $('saveBtn').disabled=false;
+});
+
+async function renderHistory(){
+  const list=$('histList'), sum=$('histSummary');
+  let trades=[];
+  try{ trades=await storeList(); }catch(e){ console.error(e); }
+
+  const closed=trades.filter(t=>t.outcome==='win'||t.outcome==='loss');
+  const wins=trades.filter(t=>t.outcome==='win').length;
+  const losses=trades.filter(t=>t.outcome==='loss').length;
+  const net=closed.reduce((s,t)=>s+(Number(t.resultAmount)||0),0);
+  sum.innerHTML=
+    '<div class="stat"><div class="n">'+trades.length+'</div><div class="l">всего</div></div>'+
+    '<div class="stat"><div class="n" style="color:var(--long)">'+wins+'</div><div class="l">в плюс</div></div>'+
+    '<div class="stat"><div class="n" style="color:var(--short)">'+losses+'</div><div class="l">в минус</div></div>'+
+    '<div class="stat"><div class="n" style="color:'+(net>=0?'var(--long)':'var(--short)')+'">'+(net>=0?'+':'')+fmt(net,2)+'</div><div class="l">итог $</div></div>';
+
+  list.innerHTML='';
+  if(!trades.length){ list.innerHTML='<div class="empty">Пока пусто. Посчитай позицию и нажми «Сохранить в историю».</div>'; return; }
+
+  trades.forEach(t=>{
+    const li=document.createElement('li'); li.className='hist-item';
+    const dir=t.direction==='long'?'<span class="hi-dir long">Лонг</span>':'<span class="hi-dir short">Шорт</span>';
+    const rr=t.riskReward!=null?('1:'+fmt(t.riskReward,2)):'—';
+    li.innerHTML=
+      '<div class="hi-top"><span class="hi-ticker">'+(t.pair||'—')+'</span>'+dir+'<span class="hi-date">'+fmtDate(t.createdAt)+'</span></div>'+
+      '<div class="hi-nums">вход <b>'+fmt(t.entryPrice,2)+'</b> · стоп <b>'+fmt(t.stopPrice,2)+'</b>'+(t.targetPrice!=null?' · цель <b>'+fmt(t.targetPrice,2)+'</b>':'')+'<br>'+
+      'позиция <b>$'+fmt(t.positionValue,2)+'</b> · риск <b>$'+fmt(t.riskAmount,2)+'</b> · R:R <b>'+rr+'</b></div>'+
+      '<div class="hi-foot">'+
+        '<button class="oc-btn win'+(t.outcome==='win'?' on':'')+'" data-oc="win">Плюс</button>'+
+        '<button class="oc-btn loss'+(t.outcome==='loss'?' on':'')+'" data-oc="loss">Минус</button>'+
+        '<button class="oc-btn cancel'+(t.outcome==='cancelled'?' on':'')+'" data-oc="cancelled">Отмена</button>'+
+        ((t.outcome==='win'||t.outcome==='loss')?'<input class="pl-input" type="text" inputmode="decimal" placeholder="факт. $" value="'+(t.resultAmount!=null?t.resultAmount:'')+'">':'')+
+        '<button class="del" title="Удалить">×</button>'+
+      '</div>';
+
+    li.querySelectorAll('.oc-btn').forEach(btn=>btn.addEventListener('click', async ()=>{
+      const oc=btn.dataset.oc;
+      const next=(t.outcome===oc)?'open':oc;              // повторный клик снимает отметку
+      const res=(next==='win'||next==='loss')?(t.resultAmount??null):null;
+      await storeOutcome(t.id,next,res); await renderHistory();
+    }));
+    const pl=li.querySelector('.pl-input');
+    if(pl){
+      const commit=async()=>{ const v=num(pl.value); await storeOutcome(t.id,t.outcome,isFinite(v)?v:null); await renderHistory(); };
+      pl.addEventListener('keydown',e=>{ if(e.key==='Enter') pl.blur(); });
+      pl.addEventListener('blur',commit);
+    }
+    li.querySelector('.del').addEventListener('click', async ()=>{ await storeRemove(t.id); await renderHistory(); });
+    list.appendChild(li);
+  });
+}
+
+/* ========================================================================
+   3b. ЦЕНА ИЗ GOOGLE FINANCE (через опубликованный CSV Google Sheets)
+   ======================================================================== */
+let autoTimer = null;
+
+function smartNum(s){
+  s = String(s).trim().replace(/"/g,'');
+  if(s.includes(',') && s.includes('.')) s = s.replace(/,/g,'');   // 61,732.00 -> 61732.00
+  else if(s.includes(',')) s = s.replace(',', '.');                // 61732,5 -> 61732.5
+  const v = parseFloat(s.replace(/[^\d.\-]/g,''));
+  return isFinite(v) ? v : NaN;
+}
+
+function setFeed(msg, kind){ const el=$('feedStatus'); el.textContent=msg; el.className='feed-status'+(kind?(' '+kind):''); }
+
+async function fetchPrice(){
+  const url = ($('sheetUrl').value || SHEET_CSV_URL || '').trim();
+  if(!url){ setFeed('источник не задан — вставь ссылку на таблицу', ''); return; }
+  const btn=$('refreshBtn'); btn.classList.add('spin');
+  setFeed('обновляю…', 'load');
+  try{
+    const r = await fetch(url, { cache:'no-store' });
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const text = await r.text();
+    const tokens = text.match(/-?\d[\d.,]*\d|\d/g);            // берём последнее число в ответе = цену
+    const price = tokens ? smartNum(tokens[tokens.length-1]) : NaN;
+    if(!isFinite(price) || price<=0) throw new Error('в ответе нет цены');
+    $('current').value = String(price);
+    recalc(); renderLevels();
+    setFeed('Google Finance · обновлено '+new Date().toLocaleTimeString('ru-RU'), 'ok');
+  }catch(e){
+    setFeed('не вышло получить цену ('+e.message+'). Проверь, что таблица «Опубликована в интернете» как CSV. Если браузер блокирует по CORS — см. заметку.', 'err');
+  }finally{
+    btn.classList.remove('spin');
+  }
+}
+
+$('refreshBtn').addEventListener('click', fetchPrice);
+$('sheetUrl').addEventListener('keydown', e=>{ if(e.key==='Enter') fetchPrice(); });
+$('autoChk').addEventListener('change', e=>{
+  if(autoTimer){ clearInterval(autoTimer); autoTimer=null; }
+  if(e.target.checked){ fetchPrice(); autoTimer=setInterval(fetchPrice, 15000); }
+});
+
+/* ========================================================================
+   4. WIRE UP
+   ======================================================================== */
+['current','account','risk','entry','stop','target','ticker'].forEach(id=>{
+  $(id).addEventListener('input', ()=>{ recalc(); renderLevels(); });
+});
+
+(async function boot(){
+  await initStore();
+  const st=$('status'), stt=$('statusText');
+  if(mode==='cloud'){ st.className='status cloud'; stt.textContent='облако подключено — история сохраняется'; }
+  else { st.className='status local'; stt.textContent='локальный режим (сессия) — впиши конфиг Firebase для облака'; }
+  if(SHEET_CSV_URL) $('sheetUrl').value = SHEET_CSV_URL;
+  renderLevels(); recalc(); await renderHistory();
+  if(($('sheetUrl').value||'').trim()) fetchPrice();
+})();
+</script>
+</body>
+</html>
